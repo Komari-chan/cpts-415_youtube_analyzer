@@ -1,0 +1,11 @@
+"video_id": Unique identifier for each video.
+"uploader": Name of the uploader.
+"age": Age of the video in days since upload.
+"category": Category of the video.
+"length": Length of the video in seconds.
+"views": View count.
+"rating": Average rating (float).
+"ratings_count": Number of ratings.
+"comments_count": Number of comments.
+"related_ids": Array of related video IDs.
+"crawl_date": The date when the crawl was performed (extracted from the log file).
