@@ -2,7 +2,7 @@ import os
 import shutil
 import glob
 from pyspark.sql import SparkSession
-from backend.spark_analysis import analyze_data, analyze_related_videos
+from backend.spark_analysis import spark_analyze_data, analyze_related_videos
 from backend.spark_visualization import generate_visualizations
 
 def clean_and_prepare_data(df_videos):
@@ -61,58 +61,39 @@ def main():
     """
     Entry point for Spark-based analysis.
     """
-    # 定义路径
-    root_dir = os.path.dirname(os.path.abspath(__file__))  # 根目录
-    jar_dir = os.path.join(root_dir, "jar")  # jar 文件目录
-    output_folder = os.path.join(root_dir, "output")  # 输出文件夹
+    root_dir = os.path.dirname(os.path.abspath(__file__))
+    output_folder = os.path.join(root_dir, "spark_output")
 
-    # 清理旧的 output 文件夹
     if os.path.exists(output_folder):
         shutil.rmtree(output_folder)
     os.makedirs(output_folder, exist_ok=True)
 
-    # Spark JAR 路径
-    jar_files = ",".join([
-        os.path.join(jar_dir, jar_name)
-        for jar_name in ["mongo-spark-connector-10.4.0.jar", "bson-4.10.0.jar",
-                         "mongodb-driver-core-4.10.0.jar", "mongodb-driver-sync-4.10.0.jar"]
-    ])
-
-    # 初始化 SparkSession
     spark = SparkSession.builder \
         .appName("YouTubeDataAnalysis") \
-        .config("spark.jars", jar_files) \
+        .config("spark.jars", ",".join([
+            os.path.join(root_dir, "jar", jar_name)
+            for jar_name in ["mongo-spark-connector-10.4.0.jar", "bson-4.10.0.jar",
+                             "mongodb-driver-core-4.10.0.jar", "mongodb-driver-sync-4.10.0.jar"]
+        ])) \
         .config("spark.mongodb.read.connection.uri", "mongodb://localhost:27017") \
         .config("spark.mongodb.read.database", "youtube_analyzer") \
         .config("spark.mongodb.read.collection", "videos") \
         .getOrCreate()
 
     try:
-        print("Loading data from MongoDB...")
         df_videos = spark.read.format("mongodb").load()
-
-        print("Cleaning and processing data...")
         df_videos = clean_and_prepare_data(df_videos)
 
-        print("Schema after cleaning:")
-        df_videos.printSchema()
-
-        print("Analyzing data...")
-        analyze_data(df_videos, output_folder)
-
-        print("Analyzing related videos...")
+        spark_analyze_data(df_videos, output_folder)
         analyze_related_videos(df_videos, output_folder)
 
-        print("Merging and renaming Spark output files...")
-        for file_name in ["trends", "category_stats", "top_10_views", "related_analysis", "top_10_ratings"]:
-            merge_and_rename_spark_output(output_folder, file_name)
+        merge_and_rename_spark_output(output_folder, "trends")
+        merge_and_rename_spark_output(output_folder, "category_stats")
+        merge_and_rename_spark_output(output_folder, "top_10_views")
+        merge_and_rename_spark_output(output_folder, "related_analysis")
+        merge_and_rename_spark_output(output_folder, "top_10_ratings")
 
-        print("Generating visualizations...")
         generate_visualizations(df_videos, output_folder)
-
-        print("Spark analysis completed successfully.")
-    except Exception as e:
-        print(f"Error during processing: {e}")
     finally:
         spark.stop()
 

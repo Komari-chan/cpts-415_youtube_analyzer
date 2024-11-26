@@ -24,7 +24,7 @@ from backend.visualization import (
 )
 from backend.mongo_connection import get_mongo_collection
 from pyspark.sql import SparkSession
-from backend.spark_analysis import analyze_data, analyze_related_videos
+from backend.spark_analysis import spark_analyze_data, analyze_related_videos
 from backend.spark_visualization import generate_visualizations
 from backend.spark_main import merge_and_rename_spark_output, clean_and_prepare_data
 import subprocess
@@ -149,7 +149,6 @@ class MainWindow(QMainWindow):
         top_n_buttons.addWidget(self.statistics_button)
 
         self.analyze_data_button = QPushButton("Analyze Data")
-        main_layout.addWidget(self.analyze_data_button)
         self.analyze_data_button.clicked.connect(self.analyze_data)
         self.top_n_input = QLineEdit()
         self.top_n_input.setPlaceholderText("Enter Top N (1-100)")
@@ -168,11 +167,12 @@ class MainWindow(QMainWindow):
         self.data_table.setColumnCount(5)  # Default columns
 
         # Add Widgets to Main Layout
-        main_layout.addLayout(filter_layout)
         main_layout.addWidget(self.load_data_button)
+        main_layout.addLayout(filter_layout)
         main_layout.addWidget(self.filter_button)
         main_layout.addWidget(self.generate_visualizations_button)
         main_layout.addLayout(visualization_buttons)
+        main_layout.addWidget(self.analyze_data_button)
         main_layout.addLayout(top_n_buttons)
         main_layout.addWidget(self.data_table)
         main_layout.addWidget(self.progress_bar)
@@ -202,18 +202,108 @@ class MainWindow(QMainWindow):
         """
         Spark
         """
+        # self.spark_load_data_button = QPushButton("Load Data Using Spark")
+        # self.spark_analyze_data_button = QPushButton("Analyze Data Using Spark")
+        # # self.load_spark_results_button = QPushButton("Display Spark Results")
+
+        # main_layout.addWidget(self.spark_load_data_button)
+        # main_layout.addWidget(self.spark_analyze_data_button)
+        # # main_layout.addWidget(self.load_spark_results_button)
+
+        # self.spark_load_data_button.clicked.connect(self.load_data_spark)
+        # self.spark_analyze_data_button.clicked.connect(self.analyze_data_spark)
+        # # self.load_spark_results_button.clicked.connect(self.load_spark_results)
+
+        # # Add Spark result display buttons
+        # self.display_category_stats_button = QPushButton("Display Category Stats")
+        # self.display_top_views_button = QPushButton("Display Top 10 Views")
+        # self.display_top_ratings_button = QPushButton("Display Top 10 Ratings")
+        # self.display_trends_button = QPushButton("Display Trends")
+
+        # # Connect buttons to specific result loaders
+        # self.display_category_stats_button.clicked.connect(lambda: self.load_single_result("category_stats.csv"))
+        # self.display_top_views_button.clicked.connect(lambda: self.load_single_result("top_10_views.csv"))
+        # self.display_top_ratings_button.clicked.connect(lambda: self.load_single_result("top_10_ratings.csv"))
+        # self.display_trends_button.clicked.connect(lambda: self.load_single_result("trends.csv"))
+
+        # # Add to layout
+        # main_layout.addWidget(self.display_category_stats_button)
+        # main_layout.addWidget(self.display_top_views_button)
+        # main_layout.addWidget(self.display_top_ratings_button)
+        # main_layout.addWidget(self.display_trends_button)
+
+        # # Add buttons for displaying images
+        # self.display_category_views_image_button = QPushButton("Category Views Graph")
+        # self.display_top_videos_image_button = QPushButton("Top 10 Videos Graph")
+        # self.display_trends_views_image_button = QPushButton("Trends Views Graph")
+        # self.display_trends_ratings_image_button = QPushButton("Trends Ratings Graph")
+
+        # # Connect buttons to specific image loaders
+        # self.display_category_views_image_button.clicked.connect(lambda: self.show_image("spark_output/category_views.png"))
+        # self.display_top_videos_image_button.clicked.connect(lambda: self.show_image("spark_output/top_10_videos.png"))
+        # self.display_trends_views_image_button.clicked.connect(lambda: self.show_image("spark_output/trends_views_fixed.png"))
+        # self.display_trends_ratings_image_button.clicked.connect(lambda: self.show_image("spark_output/trends_ratings_fixed.png"))
+
+        # # Add to layout
+        # main_layout.addWidget(self.display_category_views_image_button)
+        # main_layout.addWidget(self.display_top_videos_image_button)
+        # main_layout.addWidget(self.display_trends_views_image_button)
+        # main_layout.addWidget(self.display_trends_ratings_image_button)
+
+        # Spark Buttons
+        spark_buttons_layout = QHBoxLayout()
         self.spark_load_data_button = QPushButton("Load Data Using Spark")
         self.spark_analyze_data_button = QPushButton("Analyze Data Using Spark")
+        spark_buttons_layout.addWidget(self.spark_load_data_button)
+        spark_buttons_layout.addWidget(self.spark_analyze_data_button)
+        main_layout.addLayout(spark_buttons_layout)
 
-        main_layout.addWidget(self.spark_load_data_button)
-        main_layout.addWidget(self.spark_analyze_data_button)
+        # Buttons for Displaying Results (Tables)
+        table_buttons_layout = QHBoxLayout()
+        self.display_category_stats_button = QPushButton("Display Category Stats")
+        self.display_top_views_button = QPushButton("Display Top 10 Views")
+        self.display_top_ratings_button = QPushButton("Display Top 10 Ratings")
+        self.display_trends_button = QPushButton("Display Trends")
+        table_buttons_layout.addWidget(self.display_category_stats_button)
+        table_buttons_layout.addWidget(self.display_top_views_button)
+        table_buttons_layout.addWidget(self.display_top_ratings_button)
+        table_buttons_layout.addWidget(self.display_trends_button)
+        main_layout.addLayout(table_buttons_layout)
 
+        # Buttons for Displaying Images (Graphs)
+        graph_buttons_layout = QHBoxLayout()
+        self.display_category_views_image_button = QPushButton("Category Views Graph")
+        self.display_top_videos_image_button = QPushButton("Top 10 Videos Graph")
+        self.display_trends_views_image_button = QPushButton("Trends Views Graph")
+        self.display_trends_ratings_image_button = QPushButton("Trends Ratings Graph")
+        graph_buttons_layout.addWidget(self.display_category_views_image_button)
+        graph_buttons_layout.addWidget(self.display_top_videos_image_button)
+        graph_buttons_layout.addWidget(self.display_trends_views_image_button)
+        graph_buttons_layout.addWidget(self.display_trends_ratings_image_button)
+        main_layout.addLayout(graph_buttons_layout)
+
+        # # Progress Bar and Status Label
+        # self.progress_bar = QProgressBar()
+        # self.status_label = QLabel("Status: Ready")
+        # self.status_label.setAlignment(Qt.AlignCenter)
+        # main_layout.addWidget(self.progress_bar)
+        # main_layout.addWidget(self.status_label)
+
+        # central_widget.setLayout(main_layout)
+
+        # Connect Buttons to Actions
         self.spark_load_data_button.clicked.connect(self.load_data_spark)
         self.spark_analyze_data_button.clicked.connect(self.analyze_data_spark)
 
-        self.load_spark_results_button = QPushButton("Display Spark Results")
-        main_layout.addWidget(self.load_spark_results_button)
-        self.load_spark_results_button.clicked.connect(self.load_spark_results)
+        self.display_category_stats_button.clicked.connect(lambda: self.load_single_result("category_stats.csv"))
+        self.display_top_views_button.clicked.connect(lambda: self.load_single_result("top_10_views.csv"))
+        self.display_top_ratings_button.clicked.connect(lambda: self.load_single_result("top_10_ratings.csv"))
+        self.display_trends_button.clicked.connect(lambda: self.load_single_result("trends.csv"))
+
+        self.display_category_views_image_button.clicked.connect(lambda: self.show_image("spark_output/category_views.png"))
+        self.display_top_videos_image_button.clicked.connect(lambda: self.show_image("spark_output/top_10_videos.png"))
+        self.display_trends_views_image_button.clicked.connect(lambda: self.show_image("spark_output/trends_views_fixed.png"))
+        self.display_trends_ratings_image_button.clicked.connect(lambda: self.show_image("spark_output/trends_ratings_fixed.png"))
 
         # Initialize DataFrame
         self.df_videos = None
@@ -344,9 +434,12 @@ class MainWindow(QMainWindow):
         return "Completed"
 
     def show_image(self, image_path):
+        """
+        Show image in a dialog.
+        """
         if os.path.exists(image_path):
             dialog = ImageDialog(image_path, self)
-            dialog.exec_()  
+            dialog.exec_()
         else:
             self.status_label.setText(f"Image not found: {image_path}")
 
@@ -459,7 +552,7 @@ class MainWindow(QMainWindow):
 
     def load_data_spark(self):
         """
-        Load data using Spark and save a cleaned version to CSV.
+        Load data using Spark.
         """
         self.status_label.setText("Loading data using Spark...")
         self.disable_buttons()
@@ -468,6 +561,11 @@ class MainWindow(QMainWindow):
             try:
                 spark = SparkSession.builder \
                     .appName("YouTubeDataAnalysis") \
+                    .config("spark.driver.memory", "8g") \
+                    .config("spark.executor.memory", "8g") \
+                    .config("spark.executor.cores", "2") \
+                    .config("spark.sql.shuffle.partitions", "100") \
+                    .config("spark.memory.fraction", "0.6") \
                     .config("spark.mongodb.read.connection.uri", "mongodb://localhost:27017") \
                     .config("spark.mongodb.read.database", "youtube_analyzer") \
                     .config("spark.mongodb.read.collection", "videos") \
@@ -479,21 +577,43 @@ class MainWindow(QMainWindow):
                             "mongodb-driver-sync-4.10.0.jar"
                         ]
                     ])) \
+                    .config("spark.executor.extraJavaOptions", "-XX:+UseG1GC") \
+                    .config("spark.driver.extraJavaOptions", "-XX:+UseG1GC") \
                     .getOrCreate()
 
-                output_folder = "output"
+                df_videos = spark.read.format("mongodb").load()
+                output_folder = "spark_output"
                 os.makedirs(output_folder, exist_ok=True)
 
-                df_videos = spark.read.format("mongodb").load()
                 df_videos = clean_and_prepare_data(df_videos)
+                df_videos.write.mode("overwrite").parquet(os.path.join(output_folder, "cleaned_data.parquet"))
 
-                output_file = os.path.join(output_folder, "spark_loaded_data.csv")
-                df_videos.write.csv(output_file, header=True, mode="overwrite")
 
-                spark.stop()
-                return output_file
+
+                # output_folder = "spark_output"
+                # os.makedirs(output_folder, exist_ok=True)
+
+                # df_videos = spark.read.format("mongodb").load()
+                # df_videos = clean_and_prepare_data(df_videos)
+                # df_videos.cache()
+
+                # return df_videos.schema.simpleString()
+
+
+
+
+                # output_file = os.path.join(output_folder, "spark_loaded_data.csv")
+                # df_videos.write.csv(output_file, header=True, mode="overwrite")
+
+                
+
+
+                return "Data loaded successfully."
             except Exception as e:
                 return e
+            finally:
+                if 'spark' in locals():
+                    spark.stop()
 
         self.worker = Worker(load_data_task)  
         self.worker.progress_signal.connect(self.update_progress)
@@ -502,56 +622,49 @@ class MainWindow(QMainWindow):
 
 
     def on_spark_data_loaded(self, result):
-        """
-        Handle the completion of Spark data loading.
-        """
         if isinstance(result, Exception):
             self.status_label.setText(f"Error: {result}")
         else:
-            self.display_csv(result)
-            self.status_label.setText("Data loaded successfully using Spark.")
-        self.enable_buttons()
-
-        """
-        Handle the completion of Spark data loading.
-        """
-        if isinstance(result, Exception):
-            self.status_label.setText(f"Error: {result}")
-        else:
-            self.display_csv(result)
-            self.status_label.setText("Data loaded successfully using Spark.")
+            self.status_label.setText(result)
         self.enable_buttons()
     
     def analyze_data_spark(self):
         """
-        Analyze data using Spark and generate results.
+        Analyze data using Spark.
         """
         self.status_label.setText("Analyzing data using Spark...")
         self.disable_buttons()
 
-        def analyze_task(progress_callback=None):
+        def analyze_task(*args):
             try:
-                spark_submit_command = [
-                    "spark-submit",
-                    "--driver-memory", "8g",
-                    "--executor-memory", "8g",
-                    "--jars",
-                    ",".join([os.path.abspath(os.path.join("jar", jar)) for jar in [
-                        "mongo-spark-connector-10.4.0.jar",
-                        "bson-4.10.0.jar",
-                        "mongodb-driver-core-4.10.0.jar",
-                        "mongodb-driver-sync-4.10.0.jar"
-                    ]]),
-                    os.path.abspath("backend/spark_main.py")
-                ]
+                spark = SparkSession.builder \
+                    .appName("YouTubeDataAnalysis") \
+                    .config("spark.jars", ",".join([
+                        os.path.abspath(os.path.join("jar", jar)) for jar in [
+                            "mongo-spark-connector-10.4.0.jar",
+                            "bson-4.10.0.jar",
+                            "mongodb-driver-core-4.10.0.jar",
+                            "mongodb-driver-sync-4.10.0.jar"
+                        ]
+                    ])) \
+                    .getOrCreate()
 
-                result = subprocess.run(spark_submit_command, capture_output=True, text=True)
-                if result.returncode != 0:
-                    raise Exception(result.stderr)
+                output_folder = "spark_output"
+                cleaned_data_path = os.path.join(output_folder, "cleaned_data.parquet")
+                if not os.path.exists(cleaned_data_path):
+                    raise FileNotFoundError(f"Cleaned data not found at {cleaned_data_path}. Please load data first.")
+
+                df_videos = spark.read.parquet(cleaned_data_path)
+
+                spark_analyze_data(spark, df_videos, output_folder)
+                analyze_related_videos(df_videos, output_folder)
 
                 return "Spark analysis completed successfully."
             except Exception as e:
                 return e
+            finally:
+                if 'spark' in locals():
+                    spark.stop()
 
         self.worker = Worker(analyze_task)
         self.worker.progress_signal.connect(self.update_progress)
@@ -568,8 +681,9 @@ class MainWindow(QMainWindow):
                     .appName("YouTubeDataAnalysis") \
                     .config("spark.driver.memory", "8g") \
                     .config("spark.executor.memory", "8g") \
-                    .config("spark.executor.cores", "4") \
+                    .config("spark.executor.cores", "2") \
                     .config("spark.sql.shuffle.partitions", "100") \
+                    .config("spark.memory.fraction", "0.6") \
                     .config("spark.mongodb.read.connection.uri", "mongodb://localhost:27017") \
                     .config("spark.mongodb.read.database", "youtube_analyzer") \
                     .config("spark.mongodb.read.collection", "videos") \
@@ -589,7 +703,7 @@ class MainWindow(QMainWindow):
             df_videos = spark.read.format("mongodb").load()
             df_videos = clean_and_prepare_data(df_videos)
 
-            analyze_data(df_videos, output_folder)
+            spark_analyze_data(spark, df_videos, output_folder)
             analyze_related_videos(df_videos, output_folder)
 
             merge_and_rename_spark_output(output_folder, "trends")
@@ -610,17 +724,10 @@ class MainWindow(QMainWindow):
             spark.stop()
 
     def on_spark_analysis_completed(self, result):
-        """
-        Handle the completion of Spark analysis.
-        """
         if isinstance(result, Exception):
             self.status_label.setText(f"Error: {result}")
         else:
             self.status_label.setText(result)
-
-            self.load_spark_results()
-            self.load_spark_images()
-
         self.enable_buttons()
 
     def load_spark_results(self):
@@ -629,25 +736,12 @@ class MainWindow(QMainWindow):
         """
         spark_output_folder = "output"
 
-        category_stats_file = os.path.join(spark_output_folder, "category_stats.csv")
-        if os.path.exists(category_stats_file):
-            self.display_csv(category_stats_file)
-            self.status_label.setText("Displayed category stats.")
+        # Load only the analysis results, not the full dataset
+        for file_name in ["category_stats.csv", "top_10_views.csv", "trends.csv", "top_10_ratings.csv"]:
+            file_path = os.path.join(spark_output_folder, file_name)
+            if os.path.exists(file_path):
+                self.display_csv(file_path)
 
-        trends_file = os.path.join(spark_output_folder, "trends.csv")
-        if os.path.exists(trends_file):
-            self.display_csv(trends_file)
-            self.status_label.setText("Displayed trends data.")
-
-        top_views_file = os.path.join(spark_output_folder, "top_10_views.csv")
-        if os.path.exists(top_views_file):
-            self.display_csv(top_views_file)
-            self.status_label.setText("Displayed top 10 views.")
-
-        related_analysis_file = os.path.join(spark_output_folder, "related_analysis.csv")
-        if os.path.exists(related_analysis_file):
-            self.display_csv(related_analysis_file)
-            self.status_label.setText("Displayed related video analysis.")
 
     def load_spark_images(self):
         """
@@ -655,21 +749,22 @@ class MainWindow(QMainWindow):
         """
         spark_output_folder = "output"
 
-        category_views_image = os.path.join(spark_output_folder, "category_views.png")
-        if os.path.exists(category_views_image):
-            self.show_image(category_views_image)
+        for image_name in ["category_views.png", "top_10_videos.png", "trends_views_fixed.png", "trends_ratings_fixed.png"]:
+            image_path = os.path.join(spark_output_folder, image_name)
+            if os.path.exists(image_path):
+                self.show_image(image_path)
 
-        top_10_videos_image = os.path.join(spark_output_folder, "top_10_videos.png")
-        if os.path.exists(top_10_videos_image):
-            self.show_image(top_10_videos_image)
-
-        trends_views_image = os.path.join(spark_output_folder, "trends_views_fixed.png")
-        if os.path.exists(trends_views_image):
-            self.show_image(trends_views_image)
-
-        trends_ratings_image = os.path.join(spark_output_folder, "trends_ratings_fixed.png")
-        if os.path.exists(trends_ratings_image):
-            self.show_image(trends_ratings_image)
+    def load_single_result(self, file_name):
+        """
+        Load and display a single Spark result file.
+        """
+        spark_output_folder = "spark_output"
+        file_path = os.path.join(spark_output_folder, file_name)
+        if os.path.exists(file_path):
+            self.display_csv(file_path)
+            self.status_label.setText(f"Displayed {file_name} successfully.")
+        else:
+            self.status_label.setText(f"File not found: {file_name}")
 
 
 if __name__ == "__main__":
