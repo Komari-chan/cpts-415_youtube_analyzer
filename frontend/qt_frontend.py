@@ -341,7 +341,11 @@ class MainWindow(QMainWindow):
         if isinstance(result, Exception):
             self.status_label.setText(f"Error: {result}")
         else:
-            self.status_label.setText(f"Loaded {len(self.df_videos)} records.")
+            self.status_label.setText(result)  # Show the "Loaded X records" message
+            if self.df_videos is not None and not self.df_videos.empty:
+                self.populate_table(self.df_videos)  # Display the loaded data in the table
+            else:
+                self.status_label.setText("No data loaded from MongoDB.")
 
     def display_csv(self, file_path):
         try:
@@ -353,19 +357,43 @@ class MainWindow(QMainWindow):
                 self.status_label.setText(f"Displayed data from {os.path.basename(file_path)}.")
         except Exception as e:
             self.status_label.setText(f"Error: {e}")
-
+            
     def populate_table(self, df):
         """
         Populate the QTableWidget with data from a DataFrame.
         """
+        # Debugging output
+        print("Populating table with DataFrame:")
+        print(df)
+
+        if df is None or df.empty:
+            self.status_label.setText("No data to display.")
+            return
+
+        # Clear existing rows and set up the table
         self.data_table.setRowCount(0)
         self.data_table.setColumnCount(len(df.columns))
         self.data_table.setHorizontalHeaderLabels(df.columns)
 
+        # Temporarily disable sorting for performance
+        self.data_table.setSortingEnabled(False)
+
+        # Populate the table with data
         for row_idx, row in df.iterrows():
-            self.data_table.insertRow(row_idx)
+            self.data_table.insertRow(row_idx)  # Insert a new row
             for col_idx, value in enumerate(row):
-                self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
+                # Create a table item with data
+                item = QTableWidgetItem(str(value))
+                # Make the item selectable but not editable
+                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                self.data_table.setItem(row_idx, col_idx, item)
+
+        # Adjust column and row sizes to fit content
+        self.data_table.resizeColumnsToContents()
+        self.data_table.resizeRowsToContents()
+
+        # Re-enable sorting
+        self.data_table.setSortingEnabled(True)
 
     def filter_data(self):
         """
@@ -487,23 +515,7 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"Image not found: {image_path}")
 
-    def populate_table(self, df):
-        """
-        Populate the QTableWidget with data from a DataFrame.
-        """
-        self.data_table.setRowCount(0) 
-        self.data_table.setColumnCount(len(df.columns))  
-        self.data_table.setHorizontalHeaderLabels(df.columns)  
 
-        for row_idx, row in df.iterrows():
-            self.data_table.insertRow(row_idx)  
-            for col_idx, value in enumerate(row):
-                item = QTableWidgetItem(str(value))  
-                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)  
-                self.data_table.setItem(row_idx, col_idx, item)
-
-        self.data_table.resizeColumnsToContents()  
-        self.data_table.resizeRowsToContents()  
 
     def display_csv(self, file_path):
         """
@@ -575,25 +587,6 @@ class MainWindow(QMainWindow):
             progress_callback(100)
         return f"Analysis completed with Top {top_n} data."
     
-    def populate_table(self, df):
-        """
-        Populate the QTableWidget with data from a DataFrame and enable sorting.
-        """
-        self.data_table.setRowCount(0)
-        self.data_table.setColumnCount(len(df.columns))
-        self.data_table.setHorizontalHeaderLabels(df.columns)
-        self.data_table.setSortingEnabled(False)  
-
-        for row_idx, row in df.iterrows():
-            self.data_table.insertRow(row_idx)
-            for col_idx, value in enumerate(row):
-                item = QTableWidgetItem(str(value))
-                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                self.data_table.setItem(row_idx, col_idx, item)
-
-        self.data_table.resizeColumnsToContents()
-        self.data_table.setSortingEnabled(True)  
-
     def load_data_spark(self):
         """
         Load data using Spark.
