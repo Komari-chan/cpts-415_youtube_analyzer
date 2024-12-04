@@ -135,8 +135,19 @@ class MainWindow(QMainWindow):
         visualization_buttons.addWidget(self.combined_trends_button)
         visualization_buttons.addWidget(self.views_length_button)
 
-        
+        # Pagination Controls
+        pagination_layout = QHBoxLayout()
+        self.prev_button = QPushButton("Previous")
+        self.next_button = QPushButton("Next")
+        self.page_label = QLabel("Page 1")
+        pagination_layout.addWidget(self.prev_button)
+        pagination_layout.addWidget(self.page_label)
+        pagination_layout.addWidget(self.next_button)
 
+        main_layout.addLayout(pagination_layout)
+
+        self.page_size = 100  # Number of rows per page
+        self.current_page = 0
 
         # Top-N Data Buttons
         top_n_buttons = QHBoxLayout()
@@ -297,8 +308,29 @@ class MainWindow(QMainWindow):
         self.display_trends_views_image_button.clicked.connect(lambda: self.show_image("spark_output/trends_views_fixed.png"))
         self.display_trends_ratings_image_button.clicked.connect(lambda: self.show_image("spark_output/trends_ratings_fixed.png"))
 
+        self.next_button.clicked.connect(self.next_page)
+        self.prev_button.clicked.connect(self.prev_page)
+        
         # Initialize DataFrame
         self.df_videos = None
+
+    def next_page(self):
+        """
+        Go to the next page if possible.
+        """
+        if self.df_videos is not None:
+            total_pages = (len(self.df_videos) + self.page_size - 1) // self.page_size
+            if self.current_page < total_pages - 1:
+                self.current_page += 1
+                self.populate_table(self.df_videos)
+
+    def prev_page(self):
+        """
+        Go to the previous page if possible.
+        """
+        if self.df_videos is not None and self.current_page > 0:
+            self.current_page -= 1
+            self.populate_table(self.df_videos)
 
     def update_progress(self, value):
         # print(f"Progress: {value}%")  # Debug log
@@ -341,9 +373,10 @@ class MainWindow(QMainWindow):
         if isinstance(result, Exception):
             self.status_label.setText(f"Error: {result}")
         else:
-            self.status_label.setText(result)  # Show the "Loaded X records" message
+            self.status_label.setText(result)
             if self.df_videos is not None and not self.df_videos.empty:
-                self.populate_table(self.df_videos)  # Display the loaded data in the table
+                self.current_page = 0  # Reset to the first page
+                self.populate_table(self.df_videos)
             else:
                 self.status_label.setText("No data loaded from MongoDB.")
 
@@ -368,7 +401,13 @@ class MainWindow(QMainWindow):
 
         if df is None or df.empty:
             self.status_label.setText("No data to display.")
+            self.data_table.setRowCount(0)
             return
+
+        # Calculate start and end indices for pagination
+        start_idx = self.current_page * self.page_size
+        end_idx = start_idx + self.page_size
+        paginated_df = df.iloc[start_idx:end_idx]
 
         # Clear existing rows and set up the table
         self.data_table.setRowCount(0)
@@ -378,22 +417,25 @@ class MainWindow(QMainWindow):
         # Temporarily disable sorting for performance
         self.data_table.setSortingEnabled(False)
 
-        # Populate the table with data
-        for row_idx, row in df.iterrows():
-            self.data_table.insertRow(row_idx)  # Insert a new row
+        for row_idx, row in paginated_df.iterrows():
+            self.data_table.insertRow(row_idx - start_idx)
             for col_idx, value in enumerate(row):
-                # Create a table item with data
                 item = QTableWidgetItem(str(value))
-                # Make the item selectable but not editable
                 item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                self.data_table.setItem(row_idx, col_idx, item)
+                self.data_table.setItem(row_idx - start_idx, col_idx, item)
 
-        # Adjust column and row sizes to fit content
         self.data_table.resizeColumnsToContents()
-        self.data_table.resizeRowsToContents()
+        self.update_page_label(df)
 
         # Re-enable sorting
         self.data_table.setSortingEnabled(True)
+
+    def update_page_label(self, df):
+        """
+        Update the pagination label to reflect the current page and total pages.
+        """
+        total_pages = (len(df) + self.page_size - 1) // self.page_size
+        self.page_label.setText(f"Page {self.current_page + 1} of {total_pages}")
 
     def filter_data(self):
         """
