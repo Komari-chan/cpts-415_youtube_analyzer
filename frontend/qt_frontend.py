@@ -23,6 +23,7 @@ from backend.visualization import (
     plot_combined_trend_with_dual_axes, plot_views_by_length_range
 )
 from backend.mongo_connection import get_mongo_collection
+from backend.filter_data import filter_videos
 from pyspark.sql import SparkSession
 from backend.spark_analysis import spark_analyze_data, analyze_related_videos
 from backend.spark_visualization import generate_visualizations
@@ -282,15 +283,6 @@ class MainWindow(QMainWindow):
         graph_buttons_layout.addWidget(self.display_trends_ratings_image_button)
         main_layout.addLayout(graph_buttons_layout)
 
-        # # Progress Bar and Status Label
-        # self.progress_bar = QProgressBar()
-        # self.status_label = QLabel("Status: Ready")
-        # self.status_label.setAlignment(Qt.AlignCenter)
-        # main_layout.addWidget(self.progress_bar)
-        # main_layout.addWidget(self.status_label)
-
-        # central_widget.setLayout(main_layout)
-
         # Connect Buttons to Actions
         self.spark_load_data_button.clicked.connect(self.load_data_spark)
         self.spark_analyze_data_button.clicked.connect(self.analyze_data_spark)
@@ -309,7 +301,7 @@ class MainWindow(QMainWindow):
         self.df_videos = None
 
     def update_progress(self, value):
-        print(f"Progress: {value}%")  # Debug log
+        # print(f"Progress: {value}%")  # Debug log
         self.progress_bar.setValue(value)
 
     def load_data(self):
@@ -376,12 +368,60 @@ class MainWindow(QMainWindow):
                 self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
 
     def filter_data(self):
+        """
+        Apply filters to the loaded data and update the table display.
+        """
         if self.df_videos is not None:
-            # Filter logic based on input fields
-            age_range = self.age_input.text()
-            views_range = self.views_input.text()
-            rating_range = self.rating_input.text()
-            self.status_label.setText(f"Filtered data by {age_range}, {views_range}, {rating_range}.")
+            try:
+                # Get filter inputs
+                age_range_input = self.age_input.text().strip()
+                views_range_input = self.views_input.text().strip()
+                rating_range_input = self.rating_input.text().strip()
+
+                # Parse and sort filter inputs into tuples
+                age_range = tuple(sorted(map(int, age_range_input.split('-')))) if age_range_input else None
+                views_range = tuple(sorted(map(int, views_range_input.split('-')))) if views_range_input else None
+                rating_range = tuple(sorted(map(float, rating_range_input.split('-')))) if rating_range_input else None
+
+                # Debug: Print parsed values
+                print(f"Age Range: {age_range}, Views Range: {views_range}, Rating Range: {rating_range}")
+
+                # Validate ranges
+                def is_valid_range(min_value, max_value):
+                    return min_value <= max_value
+
+                if age_range and not is_valid_range(*age_range):
+                    self.status_label.setText("Invalid age range. Please ensure the minimum value is less than or equal to the maximum value.")
+                    return
+
+                if views_range and not is_valid_range(*views_range):
+                    self.status_label.setText("Invalid views range. Please ensure the minimum value is less than or equal to the maximum value.")
+                    return
+
+                if rating_range and not is_valid_range(*rating_range):
+                    self.status_label.setText("Invalid rating range. Please ensure the minimum value is less than or equal to the maximum value.")
+                    return
+
+                # Filter the data using the backend function
+                filtered_df = filter_videos(self.df_videos, age_range, views_range, rating_range)
+
+                # Debug: Print the filtered DataFrame
+                print("Filtered DataFrame:")
+                print(filtered_df)
+
+                if filtered_df.empty:
+                    self.status_label.setText("No data matches the applied filters.")
+                else:
+                    # Update the table display with the filtered data
+                    self.populate_table(filtered_df)
+                    self.status_label.setText("Data filtered successfully.")
+            except Exception as e:
+                print(f"Error in filter_data: {e}")
+                self.status_label.setText(f"Error applying filters: {e}")
+        else:
+            print("No data loaded.")
+            self.status_label.setText("No data loaded. Please load data first.")
+
 
     def generate_visualizations(self):
         if self.df_videos is not None:
