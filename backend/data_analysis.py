@@ -1,35 +1,40 @@
 import pandas as pd
 
-def fetch_video_data(collection):
+import pandas as pd
+
+def fetch_video_data(collection, progress_callback=None):
     """
-    Fetch relevant video data from MongoDB.
-    :param collection: MongoDB collection
-    :return: DataFrame containing video data
+    Fetch relevant video data from MongoDB with optional progress updates.
     """
     pipeline = [
-        {
-            "$project": {
-                "video_id": 1,
-                "views": 1,
-                "rating": 1,
-                "comments_count": 1,
-                "category": 1,
-                "length": 1,
-                "age": 1  # Ensure 'age' is included for time-based analysis
-            }
-        }
+        {"$project": {"video_id": 1, "views": 1, "rating": 1, "comments_count": 1, "category": 1, "length": 1, "age": 1}}
     ]
     video_data = list(collection.aggregate(pipeline))
-    df_videos = pd.DataFrame(video_data)
+    total_records = len(video_data)
 
+    data = []
+    last_progress = 0  # Track the last emitted progress percentage
+    for i, record in enumerate(video_data):
+        data.append(record)
+        
+        if progress_callback and total_records > 0:
+            current_progress = int((i + 1) / total_records * 100)
+            if current_progress > last_progress:  # Emit progress every 1%
+                last_progress = current_progress
+                progress_callback(current_progress)
+
+    df_videos = pd.DataFrame(data)
+    
     # Replace invalid or missing values with defaults
     df_videos["views"] = pd.to_numeric(df_videos["views"], errors="coerce").fillna(0).astype(int)
     df_videos["rating"] = pd.to_numeric(df_videos["rating"], errors="coerce").fillna(0)
     df_videos["comments_count"] = pd.to_numeric(df_videos["comments_count"], errors="coerce").fillna(0).astype(int)
     df_videos["length"] = pd.to_numeric(df_videos["length"], errors="coerce").fillna(0).astype(int)
     df_videos["age"] = pd.to_numeric(df_videos["age"], errors="coerce").fillna(-1).astype(int)
-
+    
     return df_videos
+
+
 
 def compute_statistics(df_videos, output_folder):
     """

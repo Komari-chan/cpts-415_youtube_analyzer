@@ -46,7 +46,7 @@ class Worker(QThread):
             # Call task function and pass a progress callback
             def progress_callback(step):
                 nonlocal progress
-                progress += step
+                progress = step
                 self.progress_signal.emit(progress)
 
             result = self.task_function(*self.args, progress_callback)
@@ -309,6 +309,7 @@ class MainWindow(QMainWindow):
         self.df_videos = None
 
     def update_progress(self, value):
+        print(f"Progress: {value}%")  # Debug log
         self.progress_bar.setValue(value)
 
     def load_data(self):
@@ -322,10 +323,12 @@ class MainWindow(QMainWindow):
             self.worker.terminate()
             self.worker.wait()
 
+        # Create a worker thread
         self.worker = Worker(self._load_data_task)
-        self.worker.progress_signal.connect(self.update_progress)
-        self.worker.result_signal.connect(self.on_data_loaded)
+        self.worker.progress_signal.connect(self.update_progress)  # Update progress bar
+        self.worker.result_signal.connect(self.on_data_loaded)     # Handle completion
         self.worker.start()
+
 
     def closeEvent(self, event):
         """
@@ -338,8 +341,9 @@ class MainWindow(QMainWindow):
 
     def _load_data_task(self, progress_callback=None):
         collection = get_mongo_collection("youtube_analyzer", "videos")
-        self.df_videos = fetch_video_data(collection)
+        self.df_videos = fetch_video_data(collection, progress_callback=progress_callback)
         return f"Loaded {len(self.df_videos)} records."
+
 
     def on_data_loaded(self, result):
         if isinstance(result, Exception):
