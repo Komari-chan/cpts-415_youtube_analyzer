@@ -318,19 +318,30 @@ class MainWindow(QMainWindow):
         """
         Go to the next page if possible.
         """
-        if self.df_videos is not None:
-            total_pages = (len(self.df_videos) + self.page_size - 1) // self.page_size
+        if self.filtered_videos is not None:
+            df = self.filtered_videos
+        else:
+            df = self.df_videos
+
+        if df is not None:
+            total_pages = (len(df) + self.page_size - 1) // self.page_size
             if self.current_page < total_pages - 1:
                 self.current_page += 1
-                self.populate_table(self.df_videos)
+                self.populate_table(df)
 
     def prev_page(self):
         """
         Go to the previous page if possible.
         """
-        if self.df_videos is not None and self.current_page > 0:
+        if self.filtered_videos is not None:
+            df = self.filtered_videos
+        else:
+            df = self.df_videos
+
+        if df is not None and self.current_page > 0:
             self.current_page -= 1
-            self.populate_table(self.df_videos)
+            self.populate_table(df)
+
 
     def update_progress(self, value):
         # print(f"Progress: {value}%")  # Debug log
@@ -408,27 +419,41 @@ class MainWindow(QMainWindow):
         start_idx = self.current_page * self.page_size
         end_idx = start_idx + self.page_size
         paginated_df = df.iloc[start_idx:end_idx]
+        
+        # Debugging: Print paginated DataFrame
+        print("Paginated DataFrame:")
+        print(paginated_df)
 
-        # Clear existing rows and set up the table
-        self.data_table.setRowCount(0)
-        self.data_table.setColumnCount(len(df.columns))
-        self.data_table.setHorizontalHeaderLabels(df.columns)
+        # Clear the table and set column count and headers
+        self.data_table.clear()
+        self.data_table.setColumnCount(len(paginated_df.columns))
+        self.data_table.setHorizontalHeaderLabels(list(paginated_df.columns))
 
         # Temporarily disable sorting for performance
         self.data_table.setSortingEnabled(False)
 
-        for row_idx, row in paginated_df.iterrows():
-            self.data_table.insertRow(row_idx - start_idx)
+        # Set the row count to match paginated data
+        self.data_table.setRowCount(len(paginated_df))
+    
+        # Populate the table
+        for row_idx, row in enumerate(paginated_df.itertuples(index=False)):
             for col_idx, value in enumerate(row):
-                item = QTableWidgetItem(str(value))
-                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                self.data_table.setItem(row_idx - start_idx, col_idx, item)
+                item = QTableWidgetItem()
+                if isinstance(value, (int, float)):
+                    item.setData(Qt.DisplayRole, value) # Ensures numeric sorting
+                else:
+                    item.setText(str(value)) # Otherwise treat as string
+                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)  # Make items non-editable
+                self.data_table.setItem(row_idx, col_idx, item)
 
         self.data_table.resizeColumnsToContents()
         self.update_page_label(df)
 
         # Re-enable sorting
         self.data_table.setSortingEnabled(True)
+        
+        # Force a table update to reflect changes
+        self.data_table.viewport().update()
 
     def update_page_label(self, df):
         """
@@ -481,9 +506,12 @@ class MainWindow(QMainWindow):
 
                 if filtered_df.empty:
                     self.status_label.setText("No data matches the applied filters.")
+                    self.data_table.setRowCount(0)  # Clear the table
                 else:
-                    # Update the table display with the filtered data
-                    self.populate_table(filtered_df)
+                    # Update the filtered DataFrame and reset pagination
+                    self.filtered_videos = filtered_df
+                    self.current_page = 0  # Reset to the first page
+                    self.populate_table(self.filtered_videos)  # Display the first page
                     self.status_label.setText("Data filtered successfully.")
             except Exception as e:
                 print(f"Error in filter_data: {e}")
