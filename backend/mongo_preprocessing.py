@@ -120,7 +120,7 @@ def precompute_top_videos(collection, output_collection_name, top_n=10):
     collection.aggregate(pipeline)
 
 if __name__ == "__main__":
-    # Example usage
+    # Test case
     db_name = "youtube_analyzer"
     videos_collection_name = "videos"
 

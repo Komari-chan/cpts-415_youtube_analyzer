@@ -30,6 +30,14 @@ from backend.spark_visualization import generate_visualizations
 from backend.spark_main import merge_and_rename_spark_output, clean_and_prepare_data
 import subprocess
 
+from backend.mongo_preprocessing import (
+    get_mongo_collection,
+    fetch_filtered_data,
+    precompute_category_statistics,
+    bin_video_lengths,
+    precompute_top_videos,
+)
+
 class Worker(QThread):
     progress_signal = pyqtSignal(int)
     result_signal = pyqtSignal(object)
@@ -71,8 +79,6 @@ def generate_visualizations_task(df_videos, output_folder, progress_callback=Non
         if progress_callback:
             progress_callback(int(100 / len(tasks)))
     return "Completed"
-
-
 
 class ImageDialog(QDialog):
     def __init__(self, image_path, parent=None):
@@ -346,6 +352,18 @@ class MainWindow(QMainWindow):
     def update_progress(self, value):
         # print(f"Progress: {value}%")  # Debug log
         self.progress_bar.setValue(value)
+
+    def format_collection(self):
+        """
+        Preprocess the MongoDB collection for analysis.
+        """
+        try:
+            precompute_category_statistics(self.collection, "category_statistics")
+            bin_video_lengths(self.collection, "video_length_bins")
+            precompute_top_videos(self.collection, "top_videos", top_n=10)
+            self.status_label.setText("MongoDB preprocessing completed.")
+        except Exception as e:
+            self.status_label.setText(f"Error during preprocessing: {e}")
 
     def load_data(self):
         """
