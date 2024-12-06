@@ -23,6 +23,7 @@ from backend.visualization import (
     plot_combined_trend_with_dual_axes, plot_views_by_length_range
 )
 from backend.mongo_connection import get_mongo_collection
+from backend.filter_data import filter_videos
 from pyspark.sql import SparkSession
 from backend.spark_analysis import spark_analyze_data, analyze_related_videos
 from backend.spark_visualization import generate_visualizations
@@ -46,7 +47,7 @@ class Worker(QThread):
             # Call task function and pass a progress callback
             def progress_callback(step):
                 nonlocal progress
-                progress += step
+                progress = step
                 self.progress_signal.emit(progress)
 
             result = self.task_function(*self.args, progress_callback)
@@ -134,8 +135,19 @@ class MainWindow(QMainWindow):
         visualization_buttons.addWidget(self.combined_trends_button)
         visualization_buttons.addWidget(self.views_length_button)
 
-        
+        # Pagination Controls
+        pagination_layout = QHBoxLayout()
+        self.prev_button = QPushButton("Previous")
+        self.next_button = QPushButton("Next")
+        self.page_label = QLabel("Page 1")
+        pagination_layout.addWidget(self.prev_button)
+        pagination_layout.addWidget(self.page_label)
+        pagination_layout.addWidget(self.next_button)
 
+        main_layout.addLayout(pagination_layout)
+
+        self.page_size = 100  # Number of rows per page
+        self.current_page = 0
 
         # Top-N Data Buttons
         top_n_buttons = QHBoxLayout()
@@ -282,15 +294,6 @@ class MainWindow(QMainWindow):
         graph_buttons_layout.addWidget(self.display_trends_ratings_image_button)
         main_layout.addLayout(graph_buttons_layout)
 
-        # # Progress Bar and Status Label
-        # self.progress_bar = QProgressBar()
-        # self.status_label = QLabel("Status: Ready")
-        # self.status_label.setAlignment(Qt.AlignCenter)
-        # main_layout.addWidget(self.progress_bar)
-        # main_layout.addWidget(self.status_label)
-
-        # central_widget.setLayout(main_layout)
-
         # Connect Buttons to Actions
         self.spark_load_data_button.clicked.connect(self.load_data_spark)
         self.spark_analyze_data_button.clicked.connect(self.analyze_data_spark)
@@ -305,10 +308,43 @@ class MainWindow(QMainWindow):
         self.display_trends_views_image_button.clicked.connect(lambda: self.show_image("spark_output/trends_views_fixed.png"))
         self.display_trends_ratings_image_button.clicked.connect(lambda: self.show_image("spark_output/trends_ratings_fixed.png"))
 
+        self.next_button.clicked.connect(self.next_page)
+        self.prev_button.clicked.connect(self.prev_page)
+        
         # Initialize DataFrame
         self.df_videos = None
 
+    def next_page(self):
+        """
+        Go to the next page if possible.
+        """
+        if self.filtered_videos is not None:
+            df = self.filtered_videos
+        else:
+            df = self.df_videos
+
+        if df is not None:
+            total_pages = (len(df) + self.page_size - 1) // self.page_size
+            if self.current_page < total_pages - 1:
+                self.current_page += 1
+                self.populate_table(df)
+
+    def prev_page(self):
+        """
+        Go to the previous page if possible.
+        """
+        if self.filtered_videos is not None:
+            df = self.filtered_videos
+        else:
+            df = self.df_videos
+
+        if df is not None and self.current_page > 0:
+            self.current_page -= 1
+            self.populate_table(df)
+
+
     def update_progress(self, value):
+        # print(f"Progress: {value}%")  # Debug log
         self.progress_bar.setValue(value)
 
     def load_data(self):
@@ -322,10 +358,12 @@ class MainWindow(QMainWindow):
             self.worker.terminate()
             self.worker.wait()
 
+        # Create a worker thread
         self.worker = Worker(self._load_data_task)
-        self.worker.progress_signal.connect(self.update_progress)
-        self.worker.result_signal.connect(self.on_data_loaded)
+        self.worker.progress_signal.connect(self.update_progress)  # Update progress bar
+        self.worker.result_signal.connect(self.on_data_loaded)     # Handle completion
         self.worker.start()
+
 
     def closeEvent(self, event):
         """
@@ -338,14 +376,20 @@ class MainWindow(QMainWindow):
 
     def _load_data_task(self, progress_callback=None):
         collection = get_mongo_collection("youtube_analyzer", "videos")
-        self.df_videos = fetch_video_data(collection)
+        self.df_videos = fetch_video_data(collection, progress_callback=progress_callback)
         return f"Loaded {len(self.df_videos)} records."
+
 
     def on_data_loaded(self, result):
         if isinstance(result, Exception):
             self.status_label.setText(f"Error: {result}")
         else:
-            self.status_label.setText(f"Loaded {len(self.df_videos)} records.")
+            self.status_label.setText(result)
+            if self.df_videos is not None and not self.df_videos.empty:
+                self.current_page = 0  # Reset to the first page
+                self.populate_table(self.df_videos)
+            else:
+                self.status_label.setText("No data loaded from MongoDB.")
 
     def display_csv(self, file_path):
         try:
@@ -357,27 +401,125 @@ class MainWindow(QMainWindow):
                 self.status_label.setText(f"Displayed data from {os.path.basename(file_path)}.")
         except Exception as e:
             self.status_label.setText(f"Error: {e}")
-
+            
     def populate_table(self, df):
         """
         Populate the QTableWidget with data from a DataFrame.
         """
-        self.data_table.setRowCount(0)
-        self.data_table.setColumnCount(len(df.columns))
-        self.data_table.setHorizontalHeaderLabels(df.columns)
+        # Debugging output
+        print("Populating table with DataFrame:")
+        print(df)
 
-        for row_idx, row in df.iterrows():
-            self.data_table.insertRow(row_idx)
+        if df is None or df.empty:
+            self.status_label.setText("No data to display.")
+            self.data_table.setRowCount(0)
+            return
+
+        # Calculate start and end indices for pagination
+        start_idx = self.current_page * self.page_size
+        end_idx = start_idx + self.page_size
+        paginated_df = df.iloc[start_idx:end_idx]
+        
+        # Debugging: Print paginated DataFrame
+        print("Paginated DataFrame:")
+        print(paginated_df)
+
+        # Clear the table and set column count and headers
+        self.data_table.clear()
+        self.data_table.setColumnCount(len(paginated_df.columns))
+        self.data_table.setHorizontalHeaderLabels(list(paginated_df.columns))
+
+        # Temporarily disable sorting for performance
+        self.data_table.setSortingEnabled(False)
+
+        # Set the row count to match paginated data
+        self.data_table.setRowCount(len(paginated_df))
+    
+        # Populate the table
+        for row_idx, row in enumerate(paginated_df.itertuples(index=False)):
             for col_idx, value in enumerate(row):
-                self.data_table.setItem(row_idx, col_idx, QTableWidgetItem(str(value)))
+                item = QTableWidgetItem()
+                if isinstance(value, (int, float)):
+                    item.setData(Qt.DisplayRole, value) # Ensures numeric sorting
+                else:
+                    item.setText(str(value)) # Otherwise treat as string
+                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)  # Make items non-editable
+                self.data_table.setItem(row_idx, col_idx, item)
+
+        self.data_table.resizeColumnsToContents()
+        self.update_page_label(df)
+
+        # Re-enable sorting
+        self.data_table.setSortingEnabled(True)
+        
+        # Force a table update to reflect changes
+        self.data_table.viewport().update()
+
+    def update_page_label(self, df):
+        """
+        Update the pagination label to reflect the current page and total pages.
+        """
+        total_pages = (len(df) + self.page_size - 1) // self.page_size
+        self.page_label.setText(f"Page {self.current_page + 1} of {total_pages}")
 
     def filter_data(self):
+        """
+        Apply filters to the loaded data and update the table display.
+        """
         if self.df_videos is not None:
-            # Filter logic based on input fields
-            age_range = self.age_input.text()
-            views_range = self.views_input.text()
-            rating_range = self.rating_input.text()
-            self.status_label.setText(f"Filtered data by {age_range}, {views_range}, {rating_range}.")
+            try:
+                # Get filter inputs
+                age_range_input = self.age_input.text().strip()
+                views_range_input = self.views_input.text().strip()
+                rating_range_input = self.rating_input.text().strip()
+
+                # Parse and sort filter inputs into tuples
+                age_range = tuple(sorted(map(int, age_range_input.split('-')))) if age_range_input else None
+                views_range = tuple(sorted(map(int, views_range_input.split('-')))) if views_range_input else None
+                rating_range = tuple(sorted(map(float, rating_range_input.split('-')))) if rating_range_input else None
+
+                # Debug: Print parsed values
+                print(f"Age Range: {age_range}, Views Range: {views_range}, Rating Range: {rating_range}")
+
+                # Validate ranges
+                def is_valid_range(min_value, max_value):
+                    return min_value <= max_value
+
+                if age_range and not is_valid_range(*age_range):
+                    self.status_label.setText("Invalid age range. Please ensure the minimum value is less than or equal to the maximum value.")
+                    return
+
+                if views_range and not is_valid_range(*views_range):
+                    self.status_label.setText("Invalid views range. Please ensure the minimum value is less than or equal to the maximum value.")
+                    return
+
+                if rating_range and not is_valid_range(*rating_range):
+                    self.status_label.setText("Invalid rating range. Please ensure the minimum value is less than or equal to the maximum value.")
+                    return
+
+                # Filter the data using the backend function
+                filtered_df = filter_videos(self.df_videos, age_range, views_range, rating_range)
+
+                # Debug: Print the filtered DataFrame
+                print("Filtered DataFrame:")
+                print(filtered_df)
+
+                if filtered_df.empty:
+                    self.status_label.setText("No data matches the applied filters.")
+                    self.data_table.setRowCount(0)  # Clear the table
+                else:
+                    # Update the filtered DataFrame and reset pagination
+                    self.filtered_videos = filtered_df
+                    self.current_page = 0  # Reset to the first page
+                    self.populate_table(self.filtered_videos)  # Display the first page
+                    self.status_label.setText("Data filtered successfully.")
+            except Exception as e:
+                print(f"Error in filter_data: {e}")
+                self.status_label.setText(f"Error applying filters: {e}")
+        else:
+            print("No data loaded.")
+            self.status_label.setText("No data loaded. Please load data first.")
+
 
     def generate_visualizations(self):
         if self.df_videos is not None:
@@ -443,23 +585,7 @@ class MainWindow(QMainWindow):
         else:
             self.status_label.setText(f"Image not found: {image_path}")
 
-    def populate_table(self, df):
-        """
-        Populate the QTableWidget with data from a DataFrame.
-        """
-        self.data_table.setRowCount(0) 
-        self.data_table.setColumnCount(len(df.columns))  
-        self.data_table.setHorizontalHeaderLabels(df.columns)  
 
-        for row_idx, row in df.iterrows():
-            self.data_table.insertRow(row_idx)  
-            for col_idx, value in enumerate(row):
-                item = QTableWidgetItem(str(value))  
-                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)  
-                self.data_table.setItem(row_idx, col_idx, item)
-
-        self.data_table.resizeColumnsToContents()  
-        self.data_table.resizeRowsToContents()  
 
     def display_csv(self, file_path):
         """
@@ -531,25 +657,6 @@ class MainWindow(QMainWindow):
             progress_callback(100)
         return f"Analysis completed with Top {top_n} data."
     
-    def populate_table(self, df):
-        """
-        Populate the QTableWidget with data from a DataFrame and enable sorting.
-        """
-        self.data_table.setRowCount(0)
-        self.data_table.setColumnCount(len(df.columns))
-        self.data_table.setHorizontalHeaderLabels(df.columns)
-        self.data_table.setSortingEnabled(False)  
-
-        for row_idx, row in df.iterrows():
-            self.data_table.insertRow(row_idx)
-            for col_idx, value in enumerate(row):
-                item = QTableWidgetItem(str(value))
-                item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                self.data_table.setItem(row_idx, col_idx, item)
-
-        self.data_table.resizeColumnsToContents()
-        self.data_table.setSortingEnabled(True)  
-
     def load_data_spark(self):
         """
         Load data using Spark.
