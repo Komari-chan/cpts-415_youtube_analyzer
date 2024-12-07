@@ -1,11 +1,15 @@
 import os
 import pymongo
 import re
+import time
 
 # MongoDB connection setup
 client = pymongo.MongoClient("mongodb://localhost:27017/")
 db = client["youtube_analyzer"]
 collection = db["videos"]
+
+# Ensure video_id is unique
+collection.create_index("video_id", unique=True)
 
 def parse_file(file_path, crawl_date):
     videos = []
@@ -14,7 +18,6 @@ def parse_file(file_path, crawl_date):
             data = line.strip().split("\t")
             # Check if the line has at least 9 elements (video info without related videos)
             if len(data) < 9:
-                # print(f"Skipping malformed line in {file_path}: {line}")
                 continue
             
             video = {
@@ -48,6 +51,8 @@ def extract_crawl_date(log_path):
     return None
 
 def load_data(directory_path):
+    total_records = 0
+    total_time = 0
     for root, dirs, files in os.walk(directory_path):
         for file in files:
             if file.endswith(".txt") and file != "log.txt":
@@ -62,7 +67,27 @@ def load_data(directory_path):
                 
                 videos = parse_file(file_path, crawl_date)
                 if videos:
-                    collection.insert_many(videos)
-                    print(f"Inserted {len(videos)} videos from {file_path}")
+                    start_time = time.time()  # Start time
+                    inserted_count = 0
+                    for video in videos:
+                        try:
+                            collection.insert_one(video)
+                            inserted_count += 1
+                        except pymongo.errors.DuplicateKeyError:
+                            print(f"Duplicate video_id detected, skipping: {video['video_id']}")
+                    end_time = time.time()  # End time
+                    
+                    elapsed_time = end_time - start_time
+                    total_records += inserted_count
+                    total_time += elapsed_time
 
-load_data(".\\data")
+                    print(f"Processed {file_path}")
+                    print(f"Inserted {inserted_count} records in {elapsed_time:.2f} seconds")
+                    print(f"Throughput: {inserted_count / elapsed_time:.2f} records/second\n")
+    
+    print(f"Total records inserted: {total_records}")
+    print(f"Total time taken: {total_time:.2f} seconds")
+    print(f"Overall throughput: {total_records / total_time:.2f} records/second" if total_time > 0 else "No records inserted.")
+
+# Load data
+load_data("./data")
